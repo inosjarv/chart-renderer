@@ -22,6 +22,7 @@ app.get('/chart', async (req: Request, res: Response) => {
     const format = parseFormat(req.query.format);
     const width = parseDim(req.query.width, 800);
     const height = parseDim(req.query.height, 450);
+    const dpi = parseDim(req.query.dpi, 192);
     const title = typeof req.query.title === 'string' ? req.query.title : 'Pricing';
 
     const points = await fetchPricingData({
@@ -32,7 +33,7 @@ app.get('/chart', async (req: Request, res: Response) => {
     const diamonds = await fetchDiamondPoints(points);
 
     if (format === 'png') {
-      const buf = await renderPng(points, diamonds, { width, height, title });
+      const buf = await renderPng(points, diamonds, { width, height, title, dpi });
       res.type('image/png').send(buf);
       return;
     }
