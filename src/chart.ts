@@ -2,7 +2,7 @@ import * as echarts from 'echarts';
 import sharp from 'sharp';
 import type { EChartsOption } from 'echarts';
 import { baseChartOption, labelColor, seriesColor, themeDefinition, themeName } from './theme';
-import type { PricePoint } from './data';
+import type { DiamondPoint, PricePoint } from './data';
 
 let themeRegistered = false;
 function ensureTheme(): void {
@@ -34,8 +34,15 @@ function labelIndicesForCurrentMonth(points: PricePoint[]): Set<number> {
   return indices;
 }
 
-function buildOption(points: PricePoint[], title: string): EChartsOption {
+function buildOption(points: PricePoint[], diamonds: DiamondPoint[], title: string): EChartsOption {
   const labeled = labelIndicesForCurrentMonth(points);
+  const dateToIndex = new Map(points.map((p, i) => [p.date, i]));
+  const diamondData = diamonds
+    .map((d) => {
+      const i = dateToIndex.get(d.date);
+      return i === undefined ? null : [i, d.price];
+    })
+    .filter((v): v is [number, number] => v !== null);
 
   return {
     ...baseChartOption(),
@@ -68,12 +75,26 @@ function buildOption(points: PricePoint[], title: string): EChartsOption {
         showSymbol: false,
         lineStyle: { color: seriesColor, width: 2 },
         itemStyle: { color: seriesColor },
+        z: 1,
+      },
+      {
+        name: 'Diamonds',
+        type: 'scatter',
+        data: diamondData,
+        symbol: 'diamond',
+        symbolSize: 10,
+        itemStyle: { color: '#000000' },
+        z: 2,
       },
     ],
   };
 }
 
-export function renderSvg(points: PricePoint[], opts: RenderOptions = {}): string {
+export function renderSvg(
+  points: PricePoint[],
+  diamonds: DiamondPoint[],
+  opts: RenderOptions = {},
+): string {
   ensureTheme();
   const { width = 800, height = 450, title = 'Pricing' } = opts;
 
@@ -84,13 +105,17 @@ export function renderSvg(points: PricePoint[], opts: RenderOptions = {}): strin
     height,
   });
 
-  chart.setOption(buildOption(points, title));
+  chart.setOption(buildOption(points, diamonds, title));
   const svg = chart.renderToSVGString();
   chart.dispose();
   return svg;
 }
 
-export async function renderPng(points: PricePoint[], opts: RenderOptions = {}): Promise<Buffer> {
-  const svg = renderSvg(points, opts);
+export async function renderPng(
+  points: PricePoint[],
+  diamonds: DiamondPoint[],
+  opts: RenderOptions = {},
+): Promise<Buffer> {
+  const svg = renderSvg(points, diamonds, opts);
   return sharp(Buffer.from(svg)).png().toBuffer();
 }
