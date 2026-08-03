@@ -1,7 +1,7 @@
 import * as echarts from 'echarts';
 import sharp from 'sharp';
 import type { EChartsOption } from 'echarts';
-import { baseChartOption, themeDefinition, themeName } from './theme';
+import { baseChartOption, labelColor, seriesColor, themeDefinition, themeName } from './theme';
 import type { PricePoint } from './data';
 
 let themeRegistered = false;
@@ -17,26 +17,57 @@ export interface RenderOptions {
   title?: string;
 }
 
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function labelIndicesForCurrentMonth(points: PricePoint[]): Set<number> {
+  const targetMonth = new Date().getMonth();
+  const seenYears = new Set<number>();
+  const indices = new Set<number>();
+  points.forEach((p, i) => {
+    const d = new Date(p.date);
+    const year = d.getUTCFullYear();
+    if (d.getUTCMonth() === targetMonth && !seenYears.has(year)) {
+      seenYears.add(year);
+      indices.add(i);
+    }
+  });
+  return indices;
+}
+
 function buildOption(points: PricePoint[], title: string): EChartsOption {
+  const labeled = labelIndicesForCurrentMonth(points);
+
   return {
     ...baseChartOption(),
-    title: { text: title, left: 'center' },
+    title: { text: title, left: 'center', top: 20, textStyle: { color: labelColor } },
     xAxis: {
       type: 'category',
       data: points.map((p) => p.date),
       boundaryGap: false,
+      axisLabel: {
+        color: labelColor,
+        margin: 14,
+        interval: (index: number) => labeled.has(index),
+        formatter: (value: string) => {
+          const d = new Date(value);
+          return `${MONTH_SHORT[d.getUTCMonth()]}-${d.getUTCFullYear()}`;
+        },
+      },
     },
     yAxis: {
       type: 'value',
       scale: true,
-      axisLabel: { formatter: '{value}' },
+      axisLabel: { color: labelColor, margin: 12 },
     },
     series: [
       {
         name: 'Price',
         type: 'line',
         data: points.map((p) => p.price),
-        areaStyle: { opacity: 0.15 },
+        smooth: false,
+        showSymbol: false,
+        lineStyle: { color: seriesColor, width: 2 },
+        itemStyle: { color: seriesColor },
       },
     ],
   };
