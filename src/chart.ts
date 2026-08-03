@@ -15,7 +15,12 @@ export interface RenderOptions {
   width?: number;
   height?: number;
   title?: string;
+  /** Target DPI for raster (PNG) output. Baseline is 96; default 192 = 2x. */
+  dpi?: number;
 }
+
+const BASE_DPI = 96;
+const SHARP_BASE_DENSITY = 72;
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -117,5 +122,9 @@ export async function renderPng(
   opts: RenderOptions = {},
 ): Promise<Buffer> {
   const svg = renderSvg(points, diamonds, opts);
-  return sharp(Buffer.from(svg)).png().toBuffer();
+  const dpi = Math.max(BASE_DPI, opts.dpi ?? 192);
+  const scale = dpi / BASE_DPI;
+  return sharp(Buffer.from(svg), { density: SHARP_BASE_DENSITY * scale })
+    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toBuffer();
 }
