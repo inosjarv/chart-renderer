@@ -1,5 +1,5 @@
 import express, { Request, Response } from 'express';
-import { fetchPricingData } from './data';
+import { fetchDiamondPoints, fetchPricingData } from './data';
 import { renderPng, renderSvg } from './chart';
 
 const app = express();
@@ -29,14 +29,15 @@ app.get('/chart', async (req: Request, res: Response) => {
       from: typeof req.query.from === 'string' ? req.query.from : undefined,
       to: typeof req.query.to === 'string' ? req.query.to : undefined,
     });
+    const diamonds = await fetchDiamondPoints(points);
 
     if (format === 'png') {
-      const buf = await renderPng(points, { width, height, title });
+      const buf = await renderPng(points, diamonds, { width, height, title });
       res.type('image/png').send(buf);
       return;
     }
 
-    const svg = renderSvg(points, { width, height, title });
+    const svg = renderSvg(points, diamonds, { width, height, title });
     res.type('image/svg+xml').send(svg);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'render failed';
