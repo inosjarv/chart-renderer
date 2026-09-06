@@ -1,0 +1,7 @@
+node_modules
+dist
+
+# Planning/docs content, not part of the linted/formatted codebase
+openspec
+.claude
+*.md
