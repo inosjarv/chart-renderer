@@ -5,7 +5,7 @@ import { baseChartOption, labelColor, seriesColor, themeDefinition, themeName } 
 import type { DiamondPoint, PricePoint } from './data';
 
 let themeRegistered = false;
-function ensureTheme(): void {
+export function ensureTheme(): void {
   if (themeRegistered) return;
   echarts.registerTheme(themeName, themeDefinition);
   themeRegistered = true;
@@ -19,12 +19,25 @@ export interface RenderOptions {
   dpi?: number;
 }
 
-const BASE_DPI = 96;
+export const BASE_DPI = 96;
 const SHARP_BASE_DENSITY = 72;
 
-const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_SHORT = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
 
-function labelIndicesForCurrentMonth(points: PricePoint[]): Set<number> {
+export function labelIndicesForCurrentMonth(points: PricePoint[]): Set<number> {
   const targetMonth = new Date().getMonth();
   const seenYears = new Set<number>();
   const indices = new Set<number>();
@@ -39,7 +52,11 @@ function labelIndicesForCurrentMonth(points: PricePoint[]): Set<number> {
   return indices;
 }
 
-function buildOption(points: PricePoint[], diamonds: DiamondPoint[], title: string): EChartsOption {
+export function buildOption(
+  points: PricePoint[],
+  diamonds: DiamondPoint[],
+  title: string,
+): EChartsOption {
   const labeled = labelIndicesForCurrentMonth(points);
   const dateToIndex = new Map(points.map((p, i) => [p.date, i]));
   const diamondData = diamonds
@@ -123,7 +140,12 @@ export async function renderPng(
   opts: RenderOptions = {},
 ): Promise<Buffer> {
   const svg = renderSvg(points, diamonds, opts);
-  const dpi = Math.max(BASE_DPI, opts.dpi ?? 192);
+  // `dpi` is validated to [72, 600] (or defaulted) upstream in the route
+  // handler via `validateDpi` - no floor needed here. Flooring to BASE_DPI
+  // used to silently collapse any requested dpi below 96 to a fixed 96-DPI
+  // output; scaling directly keeps density proportional across the full
+  // validated range.
+  const dpi = opts.dpi ?? 192;
   const scale = dpi / BASE_DPI;
   return sharp(Buffer.from(svg), { density: SHARP_BASE_DENSITY * scale })
     .png({ compressionLevel: 9, adaptiveFiltering: true })
