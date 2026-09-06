@@ -80,3 +80,21 @@ describe('GET /chart - validation error paths', () => {
     expect(res.body.error).toMatch(/raster|too large/i);
   });
 });
+
+describe('GET /chart - regression after extracting the shared validate-then-fetch helper', () => {
+  // Guards against the /chart/combined refactor (which extracted
+  // validateAndFetchChartData out of this handler) accidentally changing
+  // /chart's own response shape.
+  it('still returns a single-format response, not the combined JSON shape', async () => {
+    const res = await request(app).get('/chart?format=svg');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('image/svg+xml');
+    expect(res.headers['content-type']).not.toContain('application/json');
+  });
+
+  it('still clamps width above the maximum the same way as before the refactor', async () => {
+    const res = await request(app).get('/chart?format=png&width=9000');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('image/png');
+  });
+});

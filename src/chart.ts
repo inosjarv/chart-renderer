@@ -134,20 +134,30 @@ export function renderSvg(
   return svg;
 }
 
+/**
+ * Rasterizes an already-rendered SVG string to PNG at the given DPI. Split
+ * out of `renderPng` so a caller that already has the SVG (e.g. the
+ * combined SVG+PNG endpoint) can rasterize it directly instead of paying
+ * for a second `renderSvg` call.
+ */
+export async function svgToPng(svg: string, dpi?: number): Promise<Buffer> {
+  // `dpi` is validated to [72, 600] (or defaulted) upstream in the route
+  // handler via `validateDpi` - no floor needed here. Flooring to BASE_DPI
+  // used to silently collapse any requested dpi below 96 to a fixed 96-DPI
+  // output; scaling directly keeps density proportional across the full
+  // validated range.
+  const resolvedDpi = dpi ?? 192;
+  const scale = resolvedDpi / BASE_DPI;
+  return sharp(Buffer.from(svg), { density: SHARP_BASE_DENSITY * scale })
+    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toBuffer();
+}
+
 export async function renderPng(
   points: PricePoint[],
   diamonds: DiamondPoint[],
   opts: RenderOptions = {},
 ): Promise<Buffer> {
   const svg = renderSvg(points, diamonds, opts);
-  // `dpi` is validated to [72, 600] (or defaulted) upstream in the route
-  // handler via `validateDpi` - no floor needed here. Flooring to BASE_DPI
-  // used to silently collapse any requested dpi below 96 to a fixed 96-DPI
-  // output; scaling directly keeps density proportional across the full
-  // validated range.
-  const dpi = opts.dpi ?? 192;
-  const scale = dpi / BASE_DPI;
-  return sharp(Buffer.from(svg), { density: SHARP_BASE_DENSITY * scale })
-    .png({ compressionLevel: 9, adaptiveFiltering: true })
-    .toBuffer();
+  return svgToPng(svg, opts.dpi);
 }

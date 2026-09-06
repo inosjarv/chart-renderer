@@ -1,6 +1,6 @@
 import express, { Request, Response } from 'express';
-import { fetchDiamondPoints, fetchPricingData } from './data';
-import { renderPng, renderSvg } from './chart';
+import { DiamondPoint, fetchDiamondPoints, fetchPricingData, PricePoint } from './data';
+import { renderPng, renderSvg, svgToPng } from './chart';
 import {
   ValidationResult,
   validateDpi,
@@ -26,33 +26,62 @@ function unwrap<T>(res: Response, result: ValidationResult<T>): T | undefined {
   return undefined;
 }
 
+interface ValidatedChartRequest {
+  width: number;
+  height: number;
+  dpi: number;
+  title: string;
+  points: PricePoint[];
+  diamonds: DiamondPoint[];
+  fetchMs: number;
+}
+
+/**
+ * Shared by every `/chart*` route: validates `width`/`height`/`dpi`/`title`
+ * and the combined raster-size guard, then fetches pricing/diamond data
+ * once. On any validation failure, sends the `400` response itself and
+ * returns undefined - callers should bail out immediately in that case.
+ * `format` is validated separately per-route since not every route accepts it.
+ */
+async function validateAndFetchChartData(
+  req: Request,
+  res: Response,
+): Promise<ValidatedChartRequest | undefined> {
+  const width = unwrap(res, validateWidth(req.query.width));
+  if (width === undefined) return undefined;
+  const height = unwrap(res, validateHeight(req.query.height));
+  if (height === undefined) return undefined;
+  const dpi = unwrap(res, validateDpi(req.query.dpi));
+  if (dpi === undefined) return undefined;
+  const title = unwrap(res, validateTitle(req.query.title));
+  if (title === undefined) return undefined;
+
+  const rasterSize = validateRasterSize(width, height, dpi);
+  if (!rasterSize.ok) {
+    res.status(400).json({ error: rasterSize.error });
+    return undefined;
+  }
+
+  const fetchStart = Date.now();
+  const points = await fetchPricingData({
+    symbol: typeof req.query.symbol === 'string' ? req.query.symbol : undefined,
+    from: typeof req.query.from === 'string' ? req.query.from : undefined,
+    to: typeof req.query.to === 'string' ? req.query.to : undefined,
+  });
+  const diamonds = await fetchDiamondPoints(points);
+  const fetchMs = Date.now() - fetchStart;
+
+  return { width, height, dpi, title, points, diamonds, fetchMs };
+}
+
 app.get('/chart', async (req: Request, res: Response) => {
   try {
     const format = unwrap(res, validateFormat(req.query.format));
     if (format === undefined) return;
-    const width = unwrap(res, validateWidth(req.query.width));
-    if (width === undefined) return;
-    const height = unwrap(res, validateHeight(req.query.height));
-    if (height === undefined) return;
-    const dpi = unwrap(res, validateDpi(req.query.dpi));
-    if (dpi === undefined) return;
-    const title = unwrap(res, validateTitle(req.query.title));
-    if (title === undefined) return;
 
-    const rasterSize = validateRasterSize(width, height, dpi);
-    if (!rasterSize.ok) {
-      res.status(400).json({ error: rasterSize.error });
-      return;
-    }
-
-    const fetchStart = Date.now();
-    const points = await fetchPricingData({
-      symbol: typeof req.query.symbol === 'string' ? req.query.symbol : undefined,
-      from: typeof req.query.from === 'string' ? req.query.from : undefined,
-      to: typeof req.query.to === 'string' ? req.query.to : undefined,
-    });
-    const diamonds = await fetchDiamondPoints(points);
-    const fetchMs = Date.now() - fetchStart;
+    const validated = await validateAndFetchChartData(req, res);
+    if (validated === undefined) return;
+    const { width, height, dpi, title, points, diamonds, fetchMs } = validated;
 
     const renderStart = Date.now();
     if (format === 'png') {
@@ -73,6 +102,30 @@ app.get('/chart', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/chart/combined', async (req: Request, res: Response) => {
+  try {
+    const validated = await validateAndFetchChartData(req, res);
+    if (validated === undefined) return;
+    const { width, height, dpi, title, points, diamonds, fetchMs } = validated;
+
+    const svgStart = Date.now();
+    const svg = renderSvg(points, diamonds, { width, height, title });
+    const svgRenderMs = Date.now() - svgStart;
+
+    const pngStart = Date.now();
+    const buf = await svgToPng(svg, dpi);
+    const pngRenderMs = Date.now() - pngStart;
+
+    console.log(
+      `[chart-combined] fetchMs=${fetchMs} svgRenderMs=${svgRenderMs} pngRenderMs=${pngRenderMs}`,
+    );
+    res.json({ svg, png: buf.toString('base64') });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'render failed';
+    res.status(500).json({ error: message });
+  }
+});
+
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 if (require.main === module) {
@@ -80,6 +133,7 @@ if (require.main === module) {
     console.log(`chart-renderer listening on http://localhost:${port}`);
     console.log(`  SVG: http://localhost:${port}/chart?format=svg`);
     console.log(`  PNG: http://localhost:${port}/chart?format=png`);
+    console.log(`  Combined (SVG+PNG JSON): http://localhost:${port}/chart/combined`);
   });
 }
 
